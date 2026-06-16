@@ -1,0 +1,1 @@
+-- Placeholder (no-op). This file exists only to keep migration history aligned.
