@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import DebouncedInput from "@/components/common/DebouncedInput";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -35,7 +34,7 @@ export interface UserManagementViewProps {
   language: string;
 
   // Custom RBAC roles available in the system (custom_roles)
-  availableRoles: Array<{ role_key: string; name_en: string; name_ar: string }>;
+  availableRoles: Array<{ role_key: string; name_en: string; name_ar: string; legacy_role?: 'admin' | 'super_user' | 'audit' | 'user' | null }>;
 
   users: UserProfile[];
   filteredUsers: UserProfile[];
@@ -523,10 +522,10 @@ const UserManagementView: React.FC<UserManagementViewProps> = (props) => {
             <div className="flex flex-col md:flex-row gap-4">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <DebouncedInput
+                <Input
                   placeholder={language === 'ar' ? 'بحث بالاسم، البريد، أو الهاتف...' : 'Search by name, email, or phone...'}
                   value={searchQuery}
-                  onValueChange={setSearchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
                   className="pl-10"
                 />
               </div>

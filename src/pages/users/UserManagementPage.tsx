@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useDeferredValue, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useSupabaseAuth } from '@/hooks/useSupabaseAuth';
@@ -15,10 +15,38 @@ import { logAudit } from '@/lib/audit';
 type AppRole = string;
 type Position = 'Manager' | 'Employee';
 
+type CoreLegacyRole = 'admin' | 'audit' | 'super_user' | 'user';
+
 type CustomRole = {
   role_key: string;
   name_en: string;
   name_ar: string;
+  legacy_role?: CoreLegacyRole | null;
+};
+
+const CORE_ROLE_OPTIONS: CustomRole[] = [
+  { role_key: 'user', name_en: 'User', name_ar: 'مستخدم', legacy_role: 'user' },
+  { role_key: 'audit', name_en: 'Audit', name_ar: 'مدقق', legacy_role: 'audit' },
+  { role_key: 'super_user', name_en: 'Super User', name_ar: 'مستخدم متميز', legacy_role: 'super_user' },
+  { role_key: 'admin', name_en: 'Admin', name_ar: 'مدير النظام', legacy_role: 'admin' },
+];
+
+const mergeCoreRoles = (roles: CustomRole[]): CustomRole[] => {
+  const merged = new Map<string, CustomRole>();
+
+  // Always keep the four core roles available in the UI.
+  // Super users may not be allowed by RLS to read every row in custom_roles,
+  // but they still must be able to assign user/audit/super_user.
+  for (const r of CORE_ROLE_OPTIONS) merged.set(r.role_key, r);
+
+  for (const r of roles || []) {
+    const key = String(r.role_key || '').trim();
+    if (!key) continue;
+    const legacy = r.legacy_role || (CORE_ROLE_OPTIONS.find((c) => c.role_key === key)?.legacy_role ?? 'user');
+    merged.set(key, { ...r, role_key: key, legacy_role: legacy });
+  }
+
+  return Array.from(merged.values());
 };
 
 interface Department {
@@ -63,7 +91,7 @@ const UserManagementPage: React.FC = () => {
 
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
-  const [availableRoles, setAvailableRoles] = useState<CustomRole[]>([]);
+  const [availableRoles, setAvailableRoles] = useState<CustomRole[]>(mergeCoreRoles([]));
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [exportingCsv, setExportingCsv] = useState(false);
@@ -108,10 +136,23 @@ const UserManagementPage: React.FC = () => {
     return token;
   };
 
-  // Only admins can create/assign the admin role
+  // Only admins can create/assign the admin role.
+  // Super Users can create/update User, Audit and Super User roles only.
   const canAssignAdminRole = currentUserRole === 'admin';
-  // Only admins can reset/set a user's password (for security, passwords are never viewable)
+  // Only admins can reset/set a user's password (for security, passwords are never viewable).
   const canResetPassword = currentUserRole === 'admin';
+
+  const getRoleMeta = (roleKey: string): CustomRole | undefined => {
+    const wanted = String(roleKey || '').trim().toLowerCase();
+    return availableRoles.find((r) => String(r.role_key).trim().toLowerCase() === wanted)
+      || CORE_ROLE_OPTIONS.find((r) => r.role_key === wanted);
+  };
+
+  const getLegacyTierFromRoleKey = (roleKey: string): CoreLegacyRole => {
+    const key = String(roleKey || '').trim().toLowerCase();
+    if (key === 'admin' || key === 'audit' || key === 'super_user' || key === 'user') return key as CoreLegacyRole;
+    return (getRoleMeta(key)?.legacy_role || 'user') as CoreLegacyRole;
+  };
 
   useEffect(() => {
     if (!authLoading && !canAddUsers) {
@@ -140,11 +181,12 @@ const UserManagementPage: React.FC = () => {
       try {
         const { data: rolesList, error: rolesListErr } = await supabase
           .from('custom_roles')
-          .select('role_key,name_en,name_ar')
+          .select('role_key,name_en,name_ar,legacy_role')
           .order('created_at', { ascending: false });
-        if (!rolesListErr) setAvailableRoles((rolesList || []) as any);
+        if (!rolesListErr) setAvailableRoles(mergeCoreRoles((rolesList || []) as any));
+        else setAvailableRoles(mergeCoreRoles([]));
       } catch {
-        setAvailableRoles([]);
+        setAvailableRoles(mergeCoreRoles([]));
       }
 
       // Fetch profiles with departments (optionally include archived)
@@ -201,37 +243,32 @@ const UserManagementPage: React.FC = () => {
     setLoading(false);
   };
 
-  // Keep typing responsive: filter with a deferred search value and memoize the heavy list work.
-  const deferredSearchQuery = useDeferredValue(searchQuery);
-  const filteredUsers = useMemo(() => {
-    const normalizedSearch = deferredSearchQuery.trim().toLowerCase();
-    const rawSearch = deferredSearchQuery.trim();
+  // Filter users based on search and filters
+  const filteredUsers = users.filter(user => {
+    // Search filter
+    const searchLower = searchQuery.toLowerCase();
+    const matchesSearch = searchQuery === '' || 
+      user.name_en.toLowerCase().includes(searchLower) ||
+      user.name_ar.includes(searchQuery) ||
+      user.email.toLowerCase().includes(searchLower) ||
+      (user.phone && user.phone.toLowerCase().includes(searchLower)) ||
+      (user.staff_id && user.staff_id.toLowerCase().includes(searchLower));
 
-    return users.filter(user => {
-      // Search filter
-      const matchesSearch = normalizedSearch === '' ||
-        (user.name_en || '').toLowerCase().includes(normalizedSearch) ||
-        (user.name_ar || '').includes(rawSearch) ||
-        (user.email || '').toLowerCase().includes(normalizedSearch) ||
-        (user.phone || '').toLowerCase().includes(normalizedSearch) ||
-        (user.staff_id || '').toLowerCase().includes(normalizedSearch);
+    // Department filter
+    const matchesDepartment = filterDepartment === 'all' || 
+      (filterDepartment === 'none' && !user.department_id) ||
+      user.department_id === filterDepartment;
 
-      // Department filter
-      const matchesDepartment = filterDepartment === 'all' ||
-        (filterDepartment === 'none' && !user.department_id) ||
-        user.department_id === filterDepartment;
+    // Role filter
+    const matchesRole = filterRole === 'all' || user.role === filterRole;
 
-      // Role filter
-      const matchesRole = filterRole === 'all' || user.role === filterRole;
+    // Position filter
+    const matchesPosition = filterPosition === 'all' || 
+      (filterPosition === 'none' && !user.position) ||
+      user.position === filterPosition;
 
-      // Position filter
-      const matchesPosition = filterPosition === 'all' ||
-        (filterPosition === 'none' && !user.position) ||
-        user.position === filterPosition;
-
-      return matchesSearch && matchesDepartment && matchesRole && matchesPosition;
-    });
-  }, [users, deferredSearchQuery, filterDepartment, filterRole, filterPosition]);
+    return matchesSearch && matchesDepartment && matchesRole && matchesPosition;
+  });
 
   const clearFilters = () => {
     setSearchQuery('');
@@ -240,7 +277,7 @@ const UserManagementPage: React.FC = () => {
     setFilterPosition('all');
   };
 
-  const hasActiveFilters = searchQuery.trim() !== '' || filterDepartment !== 'all' || filterRole !== 'all' || filterPosition !== 'all';
+  const hasActiveFilters = searchQuery !== '' || filterDepartment !== 'all' || filterRole !== 'all' || filterPosition !== 'all';
 
   // -----------------------------
   // Step 3: Bulk actions
@@ -510,8 +547,9 @@ const UserManagementPage: React.FC = () => {
 
   const handleSaveUser = async () => {
     // Backend will enforce this too, but keep UX safe:
-    // Only admins can create/assign the admin role.
-    if (!canAssignAdminRole && role === 'admin') {
+    // Only admins can create/assign any role mapped to the admin tier.
+    const selectedLegacyTier = getLegacyTierFromRoleKey(role);
+    if (!canAssignAdminRole && selectedLegacyTier === 'admin') {
       toast({
         title: language === 'ar' ? 'غير مسموح' : 'Not allowed',
         description: language === 'ar' ? 'فقط المدير يمكنه إنشاء أو تعيين دور المدير' : 'Only admins can create or assign the admin role',
@@ -583,12 +621,7 @@ const UserManagementPage: React.FC = () => {
 
       setSaving(true);
     try {
-      const legacyRoleForEdge = ((): 'admin' | 'audit' | 'super_user' | 'user' => {
-        const k = (role || '').toLowerCase();
-        return (k === 'admin' || k === 'audit' || k === 'super_user' || k === 'user')
-          ? (k as any)
-          : 'user';
-      })();
+      const legacyRoleForEdge: CoreLegacyRole = selectedLegacyTier;
 
       // Clean Model RBAC:
       // - UI stores `role` as the custom role key (custom_roles.role_key) when chosen.
@@ -598,16 +631,12 @@ const UserManagementPage: React.FC = () => {
         const input = String(role ?? '').trim();
         if (!input || input === '_') return null;
 
-        // Resolve case-insensitively to the exact stored DB role_key.
-        if (availableRoles && availableRoles.length > 0) {
-          const map = new Map(
-            availableRoles.map((r) => [String(r.role_key).trim().toLowerCase(), String(r.role_key).trim()])
-          );
-          return map.get(input.toLowerCase()) ?? null;
-        }
-
-        // If roles are not loaded, send as-is (edge will validate).
-        return input;
+        // Resolve case-insensitively to the exact stored/custom role_key.
+        // Core roles are always available locally even if RLS only returned the current user's role.
+        const map = new Map(
+          (availableRoles || []).map((r) => [String(r.role_key).trim().toLowerCase(), String(r.role_key).trim()])
+        );
+        return map.get(input.toLowerCase()) ?? input;
       })();
 
       if (editingUser) {
@@ -1202,20 +1231,21 @@ const email = normalizedRow['email'];
             (availableRoles || []).map((r) => [String(r.role_key).trim().toLowerCase(), String(r.role_key).trim()])
           );
 
-          let legacyTier: 'admin' | 'audit' | 'super_user' | 'user' = 'user';
+          let legacyTier: CoreLegacyRole = 'user';
           let customRoleKeyForEdge: string | null = null;
 
           if (roleCellLower) {
             const resolved = availableKeyByLower.get(roleCellLower);
             if (resolved) {
-              // Send the exact DB key, even if Excel casing differs
+              // Send the exact DB key, even if Excel casing differs.
               customRoleKeyForEdge = resolved;
+              legacyTier = getLegacyTierFromRoleKey(resolved);
             } else if (roleCellLower === 'admin' || roleCellLower === 'audit' || roleCellLower === 'super_user' || roleCellLower === 'user') {
-              legacyTier = roleCellLower as any;
-              customRoleKeyForEdge = null;
+              legacyTier = roleCellLower as CoreLegacyRole;
+              customRoleKeyForEdge = roleCellLower;
             } else {
               legacyTier = 'user';
-              customRoleKeyForEdge = null;
+              customRoleKeyForEdge = 'user';
             }
           }
 

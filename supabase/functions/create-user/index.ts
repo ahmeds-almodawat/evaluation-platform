@@ -144,6 +144,26 @@ serve(async (req) => {
       })
     }
 
+    // Backend role guard:
+    // Admin can assign every role. Super User can create/edit only non-admin roles
+    // (super_user, audit, user). This is intentionally enforced in the edge function
+    // so a browser-side change cannot escalate a Super User to Admin.
+    const { data: currentRoleRow, error: currentRoleErr } = await adminClient
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', currentUser.id)
+      .maybeSingle()
+
+    if (currentRoleErr) {
+      return new Response(JSON.stringify({ error: 'Current role lookup failed', details: currentRoleErr }), {
+        status: 500,
+        headers: { ...headers, 'Content-Type': 'application/json' },
+      })
+    }
+
+    const currentUserLegacyRole = sanitizeLegacyRole((currentRoleRow as any)?.role)
+    const currentUserIsAdmin = currentUserLegacyRole === 'admin'
+
     // Parse body safely
     let body: any = null
     try {
@@ -195,6 +215,46 @@ serve(async (req) => {
     const rawCustomRoleKey = hasCustomRoleKeyField ? body.custom_role_key : undefined
     const customRoleKey = hasCustomRoleKeyField ? sanitizeCustomRoleKey(rawCustomRoleKey) : null
 
+    let requestedCustomRole: { role_key: string; legacy_role: 'admin' | 'super_user' | 'audit' | 'user' } | null = null
+
+    if (hasCustomRoleKeyField && customRoleKey) {
+      const { data: roles, error: rolesErr } = await adminClient
+        .from('custom_roles')
+        .select('role_key,legacy_role')
+
+      if (rolesErr) {
+        return new Response(JSON.stringify({ error: 'Role lookup failed', details: rolesErr }), {
+          status: 500,
+          headers: { ...headers, 'Content-Type': 'application/json' },
+        })
+      }
+
+      const wanted = String(customRoleKey).trim().toLowerCase()
+      const matched = (roles || []).find(
+        (r: any) => String(r.role_key).trim().toLowerCase() === wanted,
+      )
+
+      if (!matched?.role_key) {
+        return new Response(JSON.stringify({ error: `Invalid custom_role_key: ${customRoleKey}` }), {
+          status: 400,
+          headers: { ...headers, 'Content-Type': 'application/json' },
+        })
+      }
+
+      requestedCustomRole = {
+        role_key: String(matched.role_key).trim(),
+        legacy_role: sanitizeLegacyRole((matched as any).legacy_role),
+      }
+    }
+
+    const requestedLegacyTier = requestedCustomRole?.legacy_role ?? legacyRole
+    if (!currentUserIsAdmin && requestedLegacyTier === 'admin') {
+      return new Response(JSON.stringify({ error: 'Only admins can create or assign the admin role' }), {
+        status: 403,
+        headers: { ...headers, 'Content-Type': 'application/json' },
+      })
+    }
+
     // Lookup existing user id by email (your project already has this RPC)
     const { data: existingUserId, error: lookupErr } = await adminClient.rpc('get_auth_user_id_by_email', {
       p_email: email,
@@ -209,6 +269,28 @@ serve(async (req) => {
 
     let userId: string | null = existingUserId
     let updated = false
+
+    if (userId && updateExisting && !currentUserIsAdmin) {
+      const { data: targetRoleRow, error: targetRoleErr } = await adminClient
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', userId)
+        .maybeSingle()
+
+      if (targetRoleErr) {
+        return new Response(JSON.stringify({ error: 'Target role lookup failed', details: targetRoleErr }), {
+          status: 500,
+          headers: { ...headers, 'Content-Type': 'application/json' },
+        })
+      }
+
+      if (sanitizeLegacyRole((targetRoleRow as any)?.role) === 'admin') {
+        return new Response(JSON.stringify({ error: 'Only admins can edit admin users' }), {
+          status: 403,
+          headers: { ...headers, 'Content-Type': 'application/json' },
+        })
+      }
+    }
 
     if (userId) {
       if (!updateExisting) {
@@ -273,28 +355,7 @@ serve(async (req) => {
     let assignedCustomRoleKey: string | null = null
 
     if (hasCustomRoleKeyField && customRoleKey) {
-      // Fetch only role_key list and resolve case-insensitive
-      const { data: roles, error: rolesErr } = await adminClient.from('custom_roles').select('role_key')
-      if (rolesErr) {
-        return new Response(JSON.stringify({ error: 'Role lookup failed', details: rolesErr }), {
-          status: 500,
-          headers: { ...headers, 'Content-Type': 'application/json' },
-        })
-      }
-
-      const wanted = String(customRoleKey).trim().toLowerCase()
-      const matched = (roles || []).find(
-        (r: any) => String(r.role_key).trim().toLowerCase() === wanted,
-      )
-
-      if (!matched?.role_key) {
-        return new Response(JSON.stringify({ error: `Invalid custom_role_key: ${customRoleKey}` }), {
-          status: 400,
-          headers: { ...headers, 'Content-Type': 'application/json' },
-        })
-      }
-
-      assignedCustomRoleKey = String(matched.role_key).trim()
+      assignedCustomRoleKey = String(requestedCustomRole?.role_key || customRoleKey).trim()
 
       const { error: ucrErr } = await adminClient
         .from('user_custom_roles')
