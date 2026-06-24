@@ -1,0 +1,16 @@
+project_id = "jwkbbbkpanmxeanvodnv"
+
+[functions.create-user]
+verify_jwt = false
+
+[functions.api-v1]
+verify_jwt = false
+
+[functions.delete-user]
+verify_jwt = false
+
+[functions.export-users]
+verify_jwt = false
+
+[functions.scheduled-jobs]
+verify_jwt = false

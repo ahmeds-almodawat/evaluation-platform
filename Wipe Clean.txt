@@ -1,0 +1,25 @@
+do $$
+begin
+  -- evaluation answers/details (if you have it)
+  if to_regclass('public.evaluation_answers') is not null then
+    execute 'truncate table public.evaluation_answers cascade';
+  end if;
+
+  -- main evaluations
+  if to_regclass('public.evaluations') is not null then
+    execute 'truncate table public.evaluations cascade';
+  end if;
+
+  -- optional: notifications/messages/audit if you want them reset too
+  if to_regclass('public.notifications') is not null then
+    execute 'truncate table public.notifications cascade';
+  end if;
+
+  if to_regclass('public.messages') is not null then
+    execute 'truncate table public.messages cascade';
+  end if;
+
+  if to_regclass('public.audit_logs') is not null then
+    execute 'truncate table public.audit_logs cascade';
+  end if;
+end $$;
