@@ -18,7 +18,7 @@
     "sb:reset": "supabase db reset",
     "sb:push": "supabase db push",
     "sb:fn:serve": "supabase functions serve",
-    "sb:fn:deploy": "supabase functions deploy api-v1 && supabase functions deploy create-user && supabase functions deploy delete-user && supabase functions deploy export-users && supabase functions deploy restore-user",
+    "sb:fn:deploy": "supabase functions deploy api-v1 && supabase functions deploy create-user && supabase functions deploy delete-user && supabase functions deploy export-users && supabase functions deploy restore-user && supabase functions deploy scheduled-jobs",
     "stress:estimate": "node scripts/stress/evaluation-volume-estimator.mjs",
     "test:e2e:security": "playwright test tests/e2e/security-rbac.spec.ts",
     "security:check": "node scripts/security/rls-baseline-check.mjs"

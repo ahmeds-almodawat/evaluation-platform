@@ -47,6 +47,8 @@ interface ProfileRow {
   name_en: string;
   name_ar: string;
   unit_id?: string | null;
+  is_active?: boolean | null;
+  deleted_at?: string | null;
 }
 
 interface OrgUnitRow {
@@ -214,8 +216,10 @@ const DepartmentDashboard: React.FC = () => {
       const [{ data: profilesData, error: profilesError }, units] = await Promise.all([
         db
           .from('profiles')
-          .select('id, name_en, name_ar, unit_id')
-          .eq('department_id', departmentId),
+          .select('id, name_en, name_ar, unit_id, is_active, deleted_at')
+          .eq('department_id', departmentId)
+          .eq('is_active', true)
+          .is('deleted_at', null),
         fetchUnits(departmentId),
       ]);
 

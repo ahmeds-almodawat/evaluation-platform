@@ -74,6 +74,8 @@ type ProfileRow = {
   name_en: string;
   name_ar: string;
   department_id: string | null;
+  is_active?: boolean | null;
+  deleted_at?: string | null;
 };
 
 type DepartmentRow = {
@@ -239,7 +241,7 @@ const ExecutiveDashboardsPage: React.FC = () => {
       setLoading(true);
       // Keep queries simple (and fast). If a column is missing in a customer DB, the dashboard still renders.
       const nextProfiles = await safeSelect(
-        supabase.from("profiles").select("id,name_en,name_ar,department_id") as any,
+        supabase.from("profiles").select("id,name_en,name_ar,department_id,is_active,deleted_at") as any,
         [] as ProfileRow[],
       );
       const nextDepts = await safeSelect(
@@ -256,7 +258,7 @@ const ExecutiveDashboardsPage: React.FC = () => {
         [] as EvaluationRow[],
       );
 
-      setProfiles(nextProfiles);
+      setProfiles(nextProfiles.filter((profile) => profile.is_active !== false && profile.deleted_at == null));
       setDepartments(nextDepts);
       setEvaluations(nextEvals);
       setLoading(false);
@@ -345,6 +347,7 @@ const ExecutiveDashboardsPage: React.FC = () => {
   const totals = useMemo(() => {
     const scoped = filteredEvaluations;
     const totalEmployees = filteredProfiles.length;
+    const activeProfileIds = new Set(filteredProfiles.map((profile) => profile.id));
     const totalCompleted = scoped.length;
     const same = scoped.filter((e) => !isCross(e.evaluation_type));
     const cross = scoped.filter((e) => isCross(e.evaluation_type));
@@ -352,7 +355,7 @@ const ExecutiveDashboardsPage: React.FC = () => {
     const avgSame = averageEvaluationScore(same) ?? 0;
     const avgCross = averageEvaluationScore(cross) ?? 0;
 
-    const evaluatedEmployees = new Set(scoped.map((e) => e.evaluatee_id));
+    const evaluatedEmployees = new Set(scoped.map((e) => e.evaluatee_id).filter((id) => activeProfileIds.has(id)));
     const participation = totalEmployees ? (evaluatedEmployees.size / totalEmployees) * 100 : 0;
 
     return {
@@ -399,14 +402,15 @@ const ExecutiveDashboardsPage: React.FC = () => {
     return filteredDepartments
       .map((d) => {
         const empIds = byDeptEmployees.get(d.id) ?? [];
-        const deptEvals = empIds.length ? scopedEvaluations.filter((e) => empIds.includes(e.evaluatee_id)) : [];
+        const empIdSet = new Set(empIds);
+        const deptEvals = empIds.length ? scopedEvaluations.filter((e) => empIdSet.has(e.evaluatee_id)) : [];
         const same = deptEvals.filter((e) => !isCross(e.evaluation_type));
         const cross = deptEvals.filter((e) => isCross(e.evaluation_type));
 
         const avgSameDept = averageEvaluationScore(same) ?? 0;
         const avgCrossDept = averageEvaluationScore(cross) ?? 0;
 
-        const evaluated = new Set(deptEvals.map((e) => e.evaluatee_id));
+        const evaluated = new Set(deptEvals.map((e) => e.evaluatee_id).filter((id) => empIdSet.has(id)));
         const participation = empIds.length ? (evaluated.size / empIds.length) * 100 : 0;
 
         return {

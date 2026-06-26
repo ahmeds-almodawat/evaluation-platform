@@ -16,12 +16,15 @@ jobs:
           cache: 'npm'
 
       - name: Install deps
-        run: npm install --no-audit --no-fund
+        run: npm ci
 
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Unit tests
+      - name: Lint
+        run: npm run lint
+
+      - name: Tests
         run: npm run test
 
       - name: Build

@@ -188,12 +188,17 @@ const EvaluationsPage: React.FC = () => {
       // Fetch all profiles to join with evaluations
       const { data: profiles, error: profilesError } = await supabase
         .from('profiles')
-        .select('id, name_en, name_ar, department_id');
+        .select('id, name_en, name_ar, department_id, is_active, deleted_at');
       
       if (profilesError) throw profilesError;
 
       // Create a profile lookup map
       const profileMap = new Map(profiles?.map(p => [p.id, p]) || []);
+      const activeProfileIds = new Set(
+        (profiles || [])
+          .filter((p) => p.is_active !== false && p.deleted_at == null)
+          .map((p) => p.id),
+      );
 
       // Transform evaluations with profile data
       const transformedEvaluations: DisplayEvaluation[] = (evalData || []).map(e => {
@@ -259,8 +264,12 @@ const EvaluationsPage: React.FC = () => {
         return evalDate.getMonth() === currentMonth && evalDate.getFullYear() === currentYear;
       });
 
-      const totalProfiles = profiles?.length || 1;
-      const evaluatedUsers = new Set((evalData || []).map(e => e.evaluatee_id));
+      const activeProfileCount = activeProfileIds.size;
+      const evaluatedActiveUsers = new Set(
+        (evalData || [])
+          .map(e => e.evaluatee_id)
+          .filter((id): id is string => Boolean(id) && activeProfileIds.has(id)),
+      );
       
       setStats({
         total: transformedEvaluations.length,
@@ -268,7 +277,9 @@ const EvaluationsPage: React.FC = () => {
           ? transformedEvaluations.reduce((sum, e) => sum + e.score, 0) / transformedEvaluations.length
           : 0,
         thisMonth: thisMonthEvals.length,
-        participation: Math.round((evaluatedUsers.size / totalProfiles) * 100),
+        participation: activeProfileCount > 0
+          ? Math.round((evaluatedActiveUsers.size / activeProfileCount) * 100)
+          : 0,
       });
 
     } catch (error) {

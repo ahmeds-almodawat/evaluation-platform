@@ -31,13 +31,21 @@ npm run dev
 ```bash
 supabase link --project-ref YOUR_PROJECT_REF
 supabase db push
-supabase functions deploy api-v1
-supabase functions deploy create-user
-supabase functions deploy delete-user
-supabase functions deploy export-users
-supabase functions deploy restore-user
+npm run sb:fn:deploy
 ```
+
+The function deployment script deploys `api-v1`, `create-user`, `delete-user`, `export-users`, `restore-user`, and `scheduled-jobs`.
+
+Before enabling `scheduled-jobs` in Supabase schedules, set the Edge Function secret used to authorize cron calls:
+
+```bash
+supabase secrets set CRON_SECRET="your-long-random-secret"
+```
+
+Do not use a real secret in documentation, commits, screenshots, or support tickets.
 
 ## Important production notes
 
 Before a 500-user rollout, complete a real RBAC/RLS test suite covering Admin, Audit, Super User, and User roles. Also clean up the remaining hook dependency warnings, split the large frontend bundle with route-level lazy loading, and validate all Edge Function authorization paths against real Supabase users.
+
+For internal hospital production use, keep the repository private and never commit `.env` files, service role keys, Supabase secrets, backups, or exported user data.

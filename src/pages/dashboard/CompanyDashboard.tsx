@@ -50,6 +50,8 @@ interface ProfileRow {
   id: string;
   department_id: string | null;
   unit_id?: string | null;
+  is_active?: boolean | null;
+  deleted_at?: string | null;
 }
 
 interface DepartmentRow {
@@ -213,7 +215,7 @@ const CompanyDashboard: React.FC = () => {
     setLoading(true);
     try {
       const [{ data: profiles, error: profilesError }, { data: departments, error: deptError }, evaluations, units] = await Promise.all([
-        db.from('profiles').select('id, department_id, unit_id'),
+        db.from('profiles').select('id, department_id, unit_id, is_active, deleted_at'),
         db.from('departments').select('id,name_en,name_ar'),
         fetchCompletedEvaluations(),
         fetchOrgUnits(),
@@ -223,15 +225,17 @@ const CompanyDashboard: React.FC = () => {
       if (deptError) throw deptError;
 
       const profileRows = (profiles ?? []) as ProfileRow[];
+      const activeProfileRows = profileRows.filter((profile) => profile.is_active !== false && profile.deleted_at == null);
+      const activeProfileIds = new Set(activeProfileRows.map((profile) => profile.id));
       const departmentRows = (departments ?? []) as DepartmentRow[];
       const evaluationRows = evaluations ?? [];
-      const totalEmployees = profileRows.length;
+      const totalEmployees = activeProfileRows.length;
       const totalEvaluations = evaluationRows.length;
       const sameEvals = evaluationRows.filter((row) => !isCrossCampaign(row.evaluation_type));
       const crossEvals = evaluationRows.filter((row) => isCrossCampaign(row.evaluation_type));
       const avgSameDept = averageEvaluationScore(sameEvals);
       const avgCrossDept = averageEvaluationScore(crossEvals);
-      const evaluatedEmployees = new Set(evaluationRows.map((row) => row.evaluatee_id));
+      const evaluatedEmployees = new Set(evaluationRows.map((row) => row.evaluatee_id).filter((id) => activeProfileIds.has(id)));
       const participation = totalEmployees > 0 ? (evaluatedEmployees.size / totalEmployees) * 100 : 0;
 
       setMetrics({
@@ -244,7 +248,7 @@ const CompanyDashboard: React.FC = () => {
       });
 
       const deptBenchmarks: DepartmentBenchmark[] = departmentRows.map((dept) => {
-        const deptEmployees = profileRows.filter((profile) => profile.department_id === dept.id);
+        const deptEmployees = activeProfileRows.filter((profile) => profile.department_id === dept.id);
         const deptEmployeeIds = new Set(deptEmployees.map((profile) => profile.id));
         const deptEvaluations = evaluationRows.filter((row) => deptEmployeeIds.has(row.evaluatee_id));
         const deptSame = deptEvaluations.filter((row) => !isCrossCampaign(row.evaluation_type));
@@ -273,7 +277,7 @@ const CompanyDashboard: React.FC = () => {
       setDepartmentBenchmarks(deptBenchmarks);
       setTrendData(buildTrendFromEvaluations(evaluationRows, language, 12));
       setCampaignBreakdown(buildCampaignBreakdown(evaluationRows));
-      setUnitRollups(buildUnitRollups(evaluationRows, profileRows, departmentRows, units, language));
+      setUnitRollups(buildUnitRollups(evaluationRows, activeProfileRows, departmentRows, units, language));
     } catch (error) {
       console.error('Error fetching company data:', error);
     } finally {

@@ -413,7 +413,7 @@ export default function CustomDashboardsTab() {
       supabase.from("action_tickets").select("id,title,description,status,severity,due_date,created_at") as any,
     ]);
 
-    const prof = (profiles || []) as any[];
+    const prof = ((profiles || []) as any[]).filter((p) => p.is_active !== false && p.deleted_at == null);
     const depts = (departments || []) as any[];
     const evals = (evaluations || []) as any[];
 
@@ -464,7 +464,8 @@ export default function CustomDashboardsTab() {
       } else if (w.widget_type === "kpi_participation") {
         const deptId = String(cfg.department_id || "");
         const denomProfiles = deptId ? peopleInDept(deptId) : prof;
-        const evaluated = new Set(filteredEvals.map((e) => e.evaluatee_id));
+        const denomIds = new Set(denomProfiles.map((p) => p.id));
+        const evaluated = new Set(filteredEvals.map((e) => e.evaluatee_id).filter((id) => denomIds.has(id)));
         const participation = denomProfiles.length ? (evaluated.size / denomProfiles.length) * 100 : 0;
         sheets.push({ name: sheetPrefix, rows: [{ value: Math.round(participation) + "%" }] });
       } else if (w.widget_type === "table_departments_ranking") {
