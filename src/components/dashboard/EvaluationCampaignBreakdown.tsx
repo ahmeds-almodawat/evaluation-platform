@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowRightLeft, Building2, GitBranch, ShieldCheck, Users } from 'lucide-react';
+import { ArrowRightLeft, Briefcase, Building2, GitBranch, ShieldCheck, Users } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -34,6 +34,7 @@ const iconMap: Record<CampaignTypeKey, React.ReactNode> = {
   cross_department: <Building2 className="h-4 w-4" />,
   manager_to_team: <ShieldCheck className="h-4 w-4" />,
   team_to_manager: <ArrowRightLeft className="h-4 w-4" />,
+  manager_to_supervisors: <Briefcase className="h-4 w-4" />,
   legacy_same: <Users className="h-4 w-4" />,
   legacy_cross: <ArrowRightLeft className="h-4 w-4" />,
   other: <ArrowRightLeft className="h-4 w-4" />,

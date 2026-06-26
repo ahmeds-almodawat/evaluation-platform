@@ -26,7 +26,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { UserPlus, Upload, Edit, Loader2, Download, Trash2, FileDown, FileSpreadsheet, Users, Building2, Search, X, RotateCcw, SlidersHorizontal } from "lucide-react";
-import type { AppRole, Department, UserProfile } from "./userManagement.types";
+import type { AppRole, Department, EvaluationLevel, UserProfile } from "./userManagement.types";
 
 type BadgeVariant = "default" | "secondary" | "destructive" | "outline";
 
@@ -109,6 +109,9 @@ export interface UserManagementViewProps {
 
   position: "Manager" | "Employee" | "";
   setPosition: (v: "Manager" | "Employee" | "") => void;
+
+  evaluationLevel: EvaluationLevel | "";
+  setEvaluationLevel: (v: EvaluationLevel | "") => void;
 
   canAssignAdminRole: boolean;
   canResetPassword: boolean;
@@ -193,6 +196,8 @@ const UserManagementView: React.FC<UserManagementViewProps> = (props) => {
     setRole,
     position,
     setPosition,
+    evaluationLevel,
+    setEvaluationLevel,
     canAssignAdminRole,
     canResetPassword,
     getRoleBadgeVariant,
@@ -436,6 +441,24 @@ const UserManagementView: React.FC<UserManagementViewProps> = (props) => {
                         ))}
                       </SelectContent>
                     </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{language === 'ar' ? 'التسلسل الهرمي للتقييم' : 'Evaluation Hierarchy'}</Label>
+                    <Select value={evaluationLevel} onValueChange={setEvaluationLevel}>
+                      <SelectTrigger>
+                        <SelectValue placeholder={language === 'ar' ? 'اختر المستوى' : 'Select level'} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="employee">{language === 'ar' ? 'موظف' : 'Employee'}</SelectItem>
+                        <SelectItem value="supervisor">{language === 'ar' ? 'مشرف' : 'Supervisor'}</SelectItem>
+                        <SelectItem value="manager">{language === 'ar' ? 'مدير قسم' : 'Manager'}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      {language === 'ar'
+                        ? 'منفصل عن دور النظام. لا يمنح صلاحيات.'
+                        : 'Separate from system role. Does not grant permissions.'}
+                    </p>
                   </div>
                   <div className="space-y-2">
                     <Label>{language === 'ar' ? 'الدور' : 'Role'}</Label>

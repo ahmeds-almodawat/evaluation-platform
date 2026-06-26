@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Loader2,
   Building2,
@@ -78,7 +79,13 @@ type CampaignType =
   | "cross_station"
   | "cross_department"
   | "manager_to_team"
-  | "team_to_manager";
+  | "team_to_manager"
+  | "manager_to_supervisors";
+
+type CrossStationDirection =
+  | "selected_to_main"
+  | "main_to_selected"
+  | "bidirectional";
 
 interface InitiateEvaluationDialogProps {
   open: boolean;
@@ -86,10 +93,11 @@ interface InitiateEvaluationDialogProps {
   /**
    * New explicit structure:
    * - self_station: peers evaluate peers inside the same unit/station; falls back to department only when no units exist.
-   * - cross_station: selected source unit/station evaluates selected target unit/station inside the same department.
+   * - cross_station: selected station(s) evaluate a main station, the main station evaluates selected station(s), or both.
    * - cross_department: department members evaluate members in linked departments.
-   * - manager_to_team: assigned manager evaluates employees under the assigned department/unit scope.
-   * - team_to_manager: employees under an assigned scope evaluate their manager.
+   * - manager_to_team: assigned supervisor/manager evaluates employees under the assigned department/unit scope.
+   * - team_to_manager: employees under an assigned scope evaluate their supervisor/manager.
+   * - manager_to_supervisors: department manager evaluates unit/station supervisors in their department.
    *
    * Legacy aliases are still accepted internally for old callers, but creation UI should not expose them.
    */
@@ -103,6 +111,8 @@ type EvaluationScope =
   | "unit_peer"
   | "manager_department"
   | "manager_unit"
+  | "manager_to_supervisor_dept"
+  | "manager_to_supervisor_unit"
   | "cross_department"
   | "cross_unit"
   | "team_to_manager_department"
@@ -146,6 +156,7 @@ const DEFAULT_MAX_PER_EVALUATOR: Record<CampaignType, number | null> = {
   cross_department: 5,
   manager_to_team: null,
   team_to_manager: null,
+  manager_to_supervisors: null,
 };
 
 const SOFT_ASSIGNMENT_WARNING_THRESHOLD = 500;
@@ -267,6 +278,9 @@ const InitiateEvaluationDialog: React.FC<InitiateEvaluationDialogProps> = ({
   const [units, setUnits] = useState<OrgUnit[]>([]);
   const [selectedSourceUnit, setSelectedSourceUnit] = useState("");
   const [selectedTargetUnit, setSelectedTargetUnit] = useState("");
+  const [selectedBatchStationIds, setSelectedBatchStationIds] = useState<string[]>([]);
+  const [crossStationDirection, setCrossStationDirection] =
+    useState<CrossStationDirection>("selected_to_main");
   const [selfStationMode, setSelfStationMode] = useState<"all" | "specific">("all");
   const [templates, setTemplates] = useState<EvalTemplate[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
@@ -301,10 +315,10 @@ const InitiateEvaluationDialog: React.FC<InitiateEvaluationDialogProps> = ({
         icon: <Users className="w-5 h-5 text-primary" />,
       },
       cross_station: {
-        titleEn: "Cross Station Evaluation",
+        titleEn: "Multi-Station Cross Evaluation",
         titleAr: "تقييم بين الوحدات / المحطات",
         descriptionEn:
-          "A selected source station/unit evaluates a selected target station/unit inside the same department.",
+          "Create Cross Station Batch pairings between one main station and multiple selected stations inside the same department.",
         descriptionAr:
           "تقوم وحدة / محطة مختارة بتقييم وحدة / محطة أخرى داخل نفس القسم.",
         icon: <ArrowLeftRight className="w-5 h-5 text-primary" />,
@@ -336,6 +350,15 @@ const InitiateEvaluationDialog: React.FC<InitiateEvaluationDialogProps> = ({
           "يقيم الموظفون ضمن تعيين مدير نشط ذلك المدير. يتم حفظ هذا النوع منفصلاً عن تقييم الزملاء.",
         icon: <ShieldCheck className="w-5 h-5 text-primary" />,
       },
+      manager_to_supervisors: {
+        titleEn: "Manager Evaluates Supervisors",
+        titleAr: "تقييم المدير للمشرفين",
+        descriptionEn:
+          "Department managers evaluate active unit/station supervisors in their department.",
+        descriptionAr:
+          "يقيم مديرو الأقسام مشرفي الوحدات / المحطات النشطين داخل القسم.",
+        icon: <UserCheck className="w-5 h-5 text-primary" />,
+      },
     };
 
     return map[campaignType];
@@ -343,6 +366,30 @@ const InitiateEvaluationDialog: React.FC<InitiateEvaluationDialogProps> = ({
 
   const currentMonth = new Date().toISOString().slice(0, 7);
   const selectedDept = departments.find((d) => d.id === selectedDepartment);
+  const selectableCrossStationUnits = useMemo(
+    () =>
+      selectedTargetUnit
+        ? units.filter((unit) => unit.id !== selectedTargetUnit)
+        : [],
+    [selectedTargetUnit, units],
+  );
+  const selectedBatchStationIdSet = useMemo(
+    () => new Set(selectableCrossStationUnits.map((unit) => unit.id)),
+    [selectableCrossStationUnits],
+  );
+  const selectedCrossStationIds = useMemo(
+    () =>
+      selectedBatchStationIds.filter((id) => selectedBatchStationIdSet.has(id)),
+    [selectedBatchStationIdSet, selectedBatchStationIds],
+  );
+  const selectedCrossStationUnits = useMemo(
+    () =>
+      selectedCrossStationIds
+        .map((id) => units.find((unit) => unit.id === id))
+        .filter((unit): unit is OrgUnit => Boolean(unit)),
+    [selectedCrossStationIds, units],
+  );
+  const selectedCrossStationKey = selectedCrossStationIds.slice().sort().join(",");
   const maxPerEvaluatorApplies =
     campaignType === "self_station" ||
     campaignType === "cross_station" ||
@@ -365,6 +412,8 @@ const InitiateEvaluationDialog: React.FC<InitiateEvaluationDialogProps> = ({
     selectedDepartment,
     selectedSourceUnit,
     selectedTargetUnit,
+    selectedCrossStationKey,
+    crossStationDirection,
     selfStationMode,
     selectedTemplateId,
     parsedMaxPerEvaluator,
@@ -377,6 +426,8 @@ const InitiateEvaluationDialog: React.FC<InitiateEvaluationDialogProps> = ({
         ? String(DEFAULT_MAX_PER_EVALUATOR[campaignType])
         : "",
     );
+    setSelectedBatchStationIds([]);
+    setCrossStationDirection("selected_to_main");
     setPreview(null);
   }, [campaignType, open]);
 
@@ -396,6 +447,8 @@ const InitiateEvaluationDialog: React.FC<InitiateEvaluationDialogProps> = ({
   useEffect(() => {
     setSelectedSourceUnit("");
     setSelectedTargetUnit("");
+    setSelectedBatchStationIds([]);
+    setCrossStationDirection("selected_to_main");
     setSelfStationMode("all");
     if (open && selectedDepartment) {
       fetchUnits(selectedDepartment);
@@ -403,6 +456,12 @@ const InitiateEvaluationDialog: React.FC<InitiateEvaluationDialogProps> = ({
       setUnits([]);
     }
   }, [open, selectedDepartment]);
+
+  useEffect(() => {
+    setSelectedBatchStationIds((current) =>
+      current.filter((id) => id !== selectedTargetUnit && units.some((unit) => unit.id === id)),
+    );
+  }, [selectedTargetUnit, units]);
 
   const fetchDepartments = async () => {
     setLoading(true);
@@ -641,24 +700,24 @@ const InitiateEvaluationDialog: React.FC<InitiateEvaluationDialogProps> = ({
     }
 
     if (campaignType === "cross_station") {
-      if (!selectedSourceUnit || !selectedTargetUnit) {
+      if (!selectedTargetUnit || selectedCrossStationIds.length === 0) {
         toast({
           title: language === "ar" ? "اختر الوحدات" : "Select units",
           description:
             language === "ar"
               ? "يرجى اختيار الوحدة المقيِّمة والوحدة المستهدفة."
-              : "Please select both the source unit and target unit.",
+              : "Please select a main station and at least one evaluating station.",
           variant: "destructive",
         });
         return false;
       }
-      if (selectedSourceUnit === selectedTargetUnit) {
+      if (selectedCrossStationIds.includes(selectedTargetUnit)) {
         toast({
           title: language === "ar" ? "اختيار غير صحيح" : "Invalid selection",
           description:
             language === "ar"
               ? "لا يمكن أن تكون الوحدة المقيِّمة والمستهدفة نفس الوحدة."
-              : "Source and target unit cannot be the same unit.",
+              : "The main station is automatically excluded from the evaluating station list.",
           variant: "destructive",
         });
         return false;
@@ -803,7 +862,65 @@ const InitiateEvaluationDialog: React.FC<InitiateEvaluationDialogProps> = ({
         }
       }
 
-      if (campaignType === "cross_station") {
+      if (campaignType === "cross_station" && selectedCrossStationIds.length > 0) {
+        const pairIds = new Map<string, { sourceUnitId: string; targetUnitId: string }>();
+        const addPair = (sourceUnitId: string, targetUnitId: string) => {
+          if (!sourceUnitId || !targetUnitId || sourceUnitId === targetUnitId) return;
+          pairIds.set(`${sourceUnitId}:${targetUnitId}`, { sourceUnitId, targetUnitId });
+        };
+
+        for (const selectedUnitId of selectedCrossStationIds) {
+          if (crossStationDirection === "selected_to_main" || crossStationDirection === "bidirectional") {
+            addPair(selectedUnitId, selectedTargetUnit);
+          }
+          if (crossStationDirection === "main_to_selected" || crossStationDirection === "bidirectional") {
+            addPair(selectedTargetUnit, selectedUnitId);
+          }
+        }
+
+        const beforeCrossStationAssignments = assignmentsByPair.size;
+
+        for (const pair of pairIds.values()) {
+          const evaluators = nonManagerMembers.filter(
+            (m) => m.unit_id === pair.sourceUnitId,
+          );
+          const evaluatees = nonManagerMembers.filter(
+            (m) => m.unit_id === pair.targetUnitId,
+          );
+
+          if (evaluators.length === 0 || evaluatees.length === 0) {
+            continue;
+          }
+
+          const seed = `${currentMonth}:${campaignType}:${selectedDepartment}:${pair.sourceUnitId}:${pair.targetUnitId}`;
+          for (const evaluator of evaluators) {
+            const cappedEvaluatees = capTargetsForEvaluator(
+              evaluator,
+              evaluatees.filter((evaluatee) => evaluator.id !== evaluatee.id),
+              parsedMaxPerEvaluator,
+              seed,
+            );
+            for (const evaluatee of cappedEvaluatees) {
+              addAssignment({
+                evaluator,
+                evaluatee,
+                evaluationType: "cross_station",
+                evaluationScope: "cross_unit",
+              });
+            }
+          }
+        }
+
+        if (assignmentsByPair.size === beforeCrossStationAssignments) {
+          throw new Error(
+            language === "ar"
+              ? "ØªØ£ÙƒØ¯ Ø£Ù† Ø§Ù„Ù…Ø­Ø·Ø§Øª Ø§Ù„Ù…Ø®ØªØ§Ø±Ø© ØªØ­ØªÙˆÙŠ Ø¹Ù„Ù‰ Ù…ÙˆØ¸ÙÙŠÙ† Ù†Ø´Ø·ÙŠÙ†."
+              : "No valid station pairings were found. Make sure the selected stations have active employees.",
+          );
+        }
+      }
+
+      if (campaignType === "cross_station" && selectedCrossStationIds.length === 0) {
         const evaluators = nonManagerMembers.filter(
           (m) => m.unit_id === selectedSourceUnit,
         );
@@ -882,6 +999,58 @@ const InitiateEvaluationDialog: React.FC<InitiateEvaluationDialogProps> = ({
           }
         }
       }
+
+      // --- Manager → Supervisors ---
+      // Department-scoped managers evaluate unit-scoped supervisors in the same department.
+      if (campaignType === "manager_to_supervisors") {
+        // Collect unit-scoped supervisor assignments (supervisor = manager with assignment_scope='unit')
+        const unitScopedAssignments = assignments.filter(
+          (a) => a.assignment_scope === "unit",
+        );
+        if (unitScopedAssignments.length === 0) {
+          throw new Error(
+            language === "ar"
+              ? "لا يوجد مشرفي وحدات/محطات معينين في هذا القسم."
+              : "No unit/station supervisors are assigned in this department.",
+          );
+        }
+
+        // Collect department-scoped manager assignments (manager = assignment_scope='department')
+        const deptScopedManagers = assignments.filter(
+          (a) => a.assignment_scope === "department",
+        );
+
+        if (deptScopedManagers.length === 0) {
+          throw new Error(
+            language === "ar"
+              ? "لا يوجد مدير قسم معين. يرجى تعيين مدير للقسم أولاً."
+              : "No department manager is assigned. Please assign a department manager first.",
+          );
+        }
+
+        // Build a set of supervisor profile IDs from unit-scoped assignments
+        const supervisorIds = new Set(
+          unitScopedAssignments.map((a) => a.manager_id),
+        );
+
+        for (const deptManager of deptScopedManagers) {
+          const mgrProfile = managerProfiles.get(deptManager.manager_id);
+          if (!mgrProfile) continue;
+
+          for (const supervisorId of supervisorIds) {
+            if (mgrProfile.id === supervisorId) continue; // skip self-pair
+            const supervisorProfile = managerProfiles.get(supervisorId);
+            if (!supervisorProfile) continue;
+            addAssignment({
+              evaluator: mgrProfile,
+              evaluatee: supervisorProfile,
+              evaluationType: "manager_to_supervisors",
+              evaluationScope: "manager_to_supervisor_dept",
+              managerAssignmentId: deptManager.id,
+            });
+          }
+        }
+      }
     }
 
     return [...assignmentsByPair.values()];
@@ -903,9 +1072,13 @@ const InitiateEvaluationDialog: React.FC<InitiateEvaluationDialogProps> = ({
   function buildPreviewBreakdowns(assignments: AssignmentDraft[]): CampaignPreviewBreakdown[] {
     const buckets = new Map<string, { labelEn: string; labelAr: string; items: AssignmentDraft[] }>();
     const add = (key: string, labelEn: string, labelAr: string, item: AssignmentDraft) => {
-      const current = buckets.get(key) || { labelEn, labelAr, items: [] };
+      const bucketKey =
+        campaignType === "cross_station" && key === "cross_station"
+          ? `cross_station:${item.evaluator.unit_id || "department"}:${item.evaluatee.unit_id || "department"}`
+          : key;
+      const current = buckets.get(bucketKey) || { labelEn, labelAr, items: [] };
       current.items.push(item);
-      buckets.set(key, current);
+      buckets.set(bucketKey, current);
     };
 
     for (const item of assignments) {
@@ -913,8 +1086,8 @@ const InitiateEvaluationDialog: React.FC<InitiateEvaluationDialogProps> = ({
         const label = getUnitLabel(item.evaluator.unit_id);
         add(`self:${item.evaluator.unit_id || "department"}`, label.en, label.ar, item);
       } else if (campaignType === "cross_station") {
-        const source = getUnitLabel(selectedSourceUnit);
-        const target = getUnitLabel(selectedTargetUnit);
+        const source = getUnitLabel(item.evaluator.unit_id);
+        const target = getUnitLabel(item.evaluatee.unit_id);
         add("cross_station", `${source.en} → ${target.en}`, `${source.ar} ← ${target.ar}`, item);
       } else if (campaignType === "manager_to_team") {
         const scope = getUnitLabel(item.evaluatee.unit_id);
@@ -922,6 +1095,8 @@ const InitiateEvaluationDialog: React.FC<InitiateEvaluationDialogProps> = ({
       } else if (campaignType === "team_to_manager") {
         const scope = getUnitLabel(item.evaluator.unit_id);
         add(`team_to_manager:${item.managerAssignmentId || item.evaluatee.id}:${item.evaluator.unit_id || "department"}`, `${scope.en} → ${memberLabel(item.evaluatee)}`, `${scope.ar} ← ${memberLabel(item.evaluatee)}`, item);
+      } else if (campaignType === "manager_to_supervisors") {
+        add(`manager_to_supervisors:${item.evaluator.id}`, `${memberLabel(item.evaluator)} → Supervisors`, `${memberLabel(item.evaluator)} ← المشرفين`, item);
       } else {
         add("cross_department", "Cross Department", "تقييم بين الأقسام", item);
       }
@@ -953,7 +1128,8 @@ const InitiateEvaluationDialog: React.FC<InitiateEvaluationDialogProps> = ({
     if (warning === "Some evaluators will receive more than 20 forms. Consider lowering the cap to reduce survey fatigue.") return "بعض المقيّمين سيستلمون أكثر من 20 نموذجًا. فكر في تقليل الحد لتقليل إرهاق التقييم.";
     if (warning.includes("have no station/unit assigned")) return warning.replace("employee(s) are in this department but have no station/unit assigned. Station-based campaigns skip them.", "موظف/موظفين داخل هذا القسم بدون محطة/وحدة. حملات المحطة ستتخطاهم.");
     if (warning.includes("fewer than 2 eligible employees")) return warning.replace("station(s) have fewer than 2 eligible employees, so they cannot create peer evaluations.", "محطة/محطات لديها أقل من موظفين مؤهلين، لذلك لن تنشئ تقييم زملاء.");
-    if (warning.includes("have no manager assignment")) return warning.replace("active station(s) have no manager assignment. Manager→Team and Team→Manager campaigns will not cover them.", "محطة/محطات نشطة بدون تعيين مدير. حملات المدير→الفريق والفريق→المدير لن تغطيها.");
+    if (warning.includes("have no supervisor assignment")) return warning.replace("active station(s) have no supervisor assignment. Supervisor/Manager→Team and Team→Supervisor/Manager campaigns will not cover them.", "محطة/محطات نشطة بدون تعيين مشرف. حملات المشرف/المدير→الفريق والفريق→المشرف/المدير لن تغطيها.");
+    if (warning.includes("have no manager assignment")) return warning.replace("active station(s) have no manager assignment. Supervisor/Manager→Team and Team→Supervisor/Manager campaigns will not cover them.", "محطة/محطات نشطة بدون تعيين مشرف. حملات المشرف/المدير→الفريق والفريق→المشرف/المدير لن تغطيها.");
     if (warning.includes("manager assignment(s) point to inactive")) return warning.replace("manager assignment(s) point to inactive or missing stations.", "تعيين/تعيينات مدير تشير إلى محطات معطلة أو غير موجودة.");
     return warning;
   }
@@ -965,6 +1141,20 @@ const InitiateEvaluationDialog: React.FC<InitiateEvaluationDialogProps> = ({
       const { members, departmentUnits, assignments, assignedManagerIds } = await fetchDepartmentData(selectedDepartment);
       const activeUnitIds = new Set(departmentUnits.map((unit) => unit.id));
       const nonManagerMembers = members.filter((member) => !assignedManagerIds.has(member.id));
+
+      const { data: profileStatusRows, error: profileStatusError } = await db
+        .from("profiles")
+        .select("id,is_active,deleted_at")
+        .eq("department_id", selectedDepartment);
+      if (!profileStatusError) {
+        const excludedUsers = (profileStatusRows || []).filter(
+          (profile: Pick<MemberProfile, "is_active" | "deleted_at">) =>
+            profile.is_active === false || profile.deleted_at != null,
+        ).length;
+        if (excludedUsers > 0) {
+          warnings.push(`${excludedUsers} archived/inactive user(s) were excluded from this preview.`);
+        }
+      }
 
       if (departmentUnits.length > 0) {
         const missingUnits = nonManagerMembers.filter((member) => !member.unit_id).length;
@@ -983,11 +1173,51 @@ const InitiateEvaluationDialog: React.FC<InitiateEvaluationDialogProps> = ({
           }
         }
 
+        if (campaignType === "cross_station") {
+          const selectedUnitIds = new Set([selectedTargetUnit, ...selectedCrossStationIds].filter(Boolean));
+          const selectedUnitsWithoutActiveUsers = departmentUnits.filter(
+            (unit) =>
+              selectedUnitIds.has(unit.id) &&
+              members.filter((member) => member.unit_id === unit.id).length === 0,
+          );
+          if (selectedUnitsWithoutActiveUsers.length > 0) {
+            const labels = selectedUnitsWithoutActiveUsers
+              .map((unit) => (language === "ar" ? unit.name_ar || unit.name_en : unit.name_en))
+              .join(", ");
+            warnings.push(`Selected station(s) with no active users: ${labels}.`);
+          }
+
+          const selectedUnitsWithoutEligibleUsers = departmentUnits.filter(
+            (unit) =>
+              selectedUnitIds.has(unit.id) &&
+              members.filter((member) => member.unit_id === unit.id).length > 0 &&
+              nonManagerMembers.filter((member) => member.unit_id === unit.id).length === 0,
+          );
+          if (selectedUnitsWithoutEligibleUsers.length > 0) {
+            const labels = selectedUnitsWithoutEligibleUsers
+              .map((unit) => (language === "ar" ? unit.name_ar || unit.name_en : unit.name_en))
+              .join(", ");
+            warnings.push(`Selected station(s) have active users, but no eligible non-manager evaluators/evaluatees: ${labels}.`);
+          }
+        }
+
         const hasDepartmentWideManager = assignments.some((assignment) => assignment.assignment_scope === "department");
         const assignedUnitIds = new Set(assignments.filter((assignment) => assignment.unit_id).map((assignment) => assignment.unit_id));
         const stationsWithoutManager = departmentUnits.filter((unit) => !hasDepartmentWideManager && !assignedUnitIds.has(unit.id)).length;
         if (stationsWithoutManager > 0) {
-          warnings.push(`${stationsWithoutManager} active station(s) have no manager assignment. Manager→Team and Team→Manager campaigns will not cover them.`);
+          warnings.push(`${stationsWithoutManager} active station(s) have no supervisor assignment. Supervisor/Manager→Team and Team→Supervisor/Manager campaigns will not cover them.`);
+        }
+      }
+
+      // Specific warnings for manager_to_supervisors campaign
+      if (campaignType === "manager_to_supervisors") {
+        const hasDeptManager = assignments.some((a) => a.assignment_scope === "department");
+        if (!hasDeptManager) {
+          warnings.push("No department manager is assigned. Manager→Supervisors campaigns require a department-scoped manager.");
+        }
+        const unitScopedCount = assignments.filter((a) => a.assignment_scope === "unit").length;
+        if (unitScopedCount === 0) {
+          warnings.push("No unit/station supervisors are assigned. There are no supervisors for the department manager to evaluate.");
         }
       }
 
@@ -1106,7 +1336,7 @@ const InitiateEvaluationDialog: React.FC<InitiateEvaluationDialogProps> = ({
         campaign_scope: assignments[0]?.evaluationScope ?? null,
         department_id: selectedDepartment,
         source_unit_id:
-          campaignType === "cross_station" || (campaignType === "self_station" && selfStationMode === "specific")
+          campaignType === "self_station" && selfStationMode === "specific"
             ? selectedSourceUnit
             : null,
         target_unit_id:
@@ -1126,6 +1356,14 @@ const InitiateEvaluationDialog: React.FC<InitiateEvaluationDialogProps> = ({
             preview.maxAssignmentsForOneEvaluator,
           source: "InitiateEvaluationDialog",
           self_station_mode: campaignType === "self_station" ? selfStationMode : null,
+          cross_station_batch:
+            campaignType === "cross_station"
+              ? {
+                  main_unit_id: selectedTargetUnit,
+                  selected_unit_ids: selectedCrossStationIds,
+                  direction: crossStationDirection,
+                }
+              : null,
           preview_breakdowns: preview.breakdowns,
         },
       };
@@ -1201,6 +1439,8 @@ const InitiateEvaluationDialog: React.FC<InitiateEvaluationDialogProps> = ({
       setSelectedDepartment("");
       setSelectedSourceUnit("");
       setSelectedTargetUnit("");
+      setSelectedBatchStationIds([]);
+      setCrossStationDirection("selected_to_main");
       setSelectedTemplateId("");
       setPreview(null);
       onOpenChange(false);
@@ -1317,34 +1557,7 @@ const InitiateEvaluationDialog: React.FC<InitiateEvaluationDialogProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 rounded-lg border border-border/60 bg-secondary/20 p-3">
               <div className="space-y-2">
                 <Label>
-                  {language === "ar" ? "الوحدة المقيِّمة" : "Source Unit"}
-                </Label>
-                <Select
-                  value={selectedSourceUnit}
-                  onValueChange={setSelectedSourceUnit}
-                  disabled={
-                    !selectedDepartment || loadingUnits || units.length < 2
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue
-                      placeholder={
-                        language === "ar" ? "اختر الوحدة" : "Choose unit"
-                      }
-                    />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {units.map((unit) => (
-                      <SelectItem key={unit.id} value={unit.id}>
-                        {language === "ar" ? unit.name_ar : unit.name_en}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>
-                  {language === "ar" ? "الوحدة المستهدفة" : "Target Unit"}
+                  {language === "ar" ? "الوحدة المستهدفة" : "Main / Target Station"}
                 </Label>
                 <Select
                   value={selectedTargetUnit}
@@ -1369,10 +1582,123 @@ const InitiateEvaluationDialog: React.FC<InitiateEvaluationDialogProps> = ({
                   </SelectContent>
                 </Select>
               </div>
+              <div className="space-y-2">
+                <Label>
+                  {language === "ar" ? "الاتجاه" : "Direction"}
+                </Label>
+                <Select
+                  value={crossStationDirection}
+                  onValueChange={(value) =>
+                    setCrossStationDirection(value as CrossStationDirection)
+                  }
+                  disabled={
+                    !selectedDepartment || loadingUnits || units.length < 2
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue
+                      placeholder={
+                        language === "ar" ? "اختر الوحدة" : "Choose unit"
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="selected_to_main">
+                      {language === "ar"
+                        ? "المحطات المختارة ← المحطة الرئيسية"
+                        : "Selected stations -> Main station"}
+                    </SelectItem>
+                    <SelectItem value="main_to_selected">
+                      {language === "ar"
+                        ? "المحطة الرئيسية ← المحطات المختارة"
+                        : "Main station -> Selected stations"}
+                    </SelectItem>
+                    <SelectItem value="bidirectional">
+                      {language === "ar" ? "اتجاهان" : "Bidirectional"}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="md:col-span-2 space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <Label>
+                    {language === "ar"
+                      ? "المحطات المقيِّمة"
+                      : "Evaluating stations"}
+                  </Label>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() =>
+                        setSelectedBatchStationIds(
+                          selectableCrossStationUnits.map((unit) => unit.id),
+                        )
+                      }
+                      disabled={selectableCrossStationUnits.length === 0}
+                    >
+                      {language === "ar" ? "اختيار الكل" : "Select All"}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setSelectedBatchStationIds([])}
+                      disabled={selectedCrossStationIds.length === 0}
+                    >
+                      {language === "ar" ? "مسح الكل" : "Clear All"}
+                    </Button>
+                  </div>
+                </div>
+                <div className="max-h-48 space-y-2 overflow-auto rounded-md border border-border/60 bg-background/60 p-2">
+                  {selectableCrossStationUnits.length > 0 ? (
+                    selectableCrossStationUnits.map((unit) => (
+                      <div
+                        key={unit.id}
+                        className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-secondary/60"
+                      >
+                        <Checkbox
+                          id={`cross-station-${unit.id}`}
+                          checked={selectedCrossStationIds.includes(unit.id)}
+                          onCheckedChange={(checked) => {
+                            setSelectedBatchStationIds((current) =>
+                              checked === true
+                                ? Array.from(new Set([...current, unit.id]))
+                                : current.filter((id) => id !== unit.id),
+                            );
+                          }}
+                        />
+                        <Label
+                          htmlFor={`cross-station-${unit.id}`}
+                          className="flex-1 cursor-pointer text-sm font-normal"
+                        >
+                          {language === "ar" ? unit.name_ar : unit.name_en}
+                        </Label>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="px-2 py-3 text-xs text-muted-foreground">
+                      {selectedTargetUnit
+                        ? language === "ar"
+                          ? "لا توجد محطات أخرى متاحة."
+                          : "No other stations are available."
+                        : language === "ar"
+                          ? "اختر المحطة الرئيسية أولاً."
+                          : "Choose the main station first."}
+                    </p>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {language === "ar"
+                    ? "يتم استبعاد المحطة الرئيسية تلقائياً من قائمة المحطات المختارة."
+                    : `${selectedCrossStationIds.length} station(s) selected. The main station is excluded automatically.`}
+                </p>
+              </div>
               <div className="md:col-span-2 text-xs text-muted-foreground">
                 {language === "ar"
                   ? "يتطلب هذا النوع وجود وحدتين نشطتين على الأقل داخل نفس القسم."
-                  : "This type requires at least two active units inside the same department."}
+                  : "Select one main station, choose evaluating stations, then preview the station pairings before creating evaluations."}
               </div>
             </div>
           ) : null}
@@ -1462,7 +1788,7 @@ const InitiateEvaluationDialog: React.FC<InitiateEvaluationDialogProps> = ({
                   !selectedDepartment ||
                   !selectedTemplateId ||
                   ((campaignType === "cross_station" &&
-                    (!selectedSourceUnit || !selectedTargetUnit)) ||
+                    (!selectedTargetUnit || selectedCrossStationIds.length === 0)) ||
                     (campaignType === "self_station" && selfStationMode === "specific" && !selectedSourceUnit))
                 }
               >
@@ -1496,7 +1822,7 @@ const InitiateEvaluationDialog: React.FC<InitiateEvaluationDialogProps> = ({
                   </div>
                   <div className="rounded-md bg-secondary/50 p-2">
                     <p className="text-xs text-muted-foreground">
-                      {language === "ar" ? "إجمالي الطلبات" : "Total forms"}
+                      {language === "ar" ? "إجمالي الطلبات" : "Estimated total forms"}
                     </p>
                     <p className="text-lg font-bold text-primary">
                       {preview.totalAssignments}
@@ -1512,10 +1838,34 @@ const InitiateEvaluationDialog: React.FC<InitiateEvaluationDialogProps> = ({
                   </div>
                 </div>
 
+                {campaignType === "cross_station" && selectedCrossStationUnits.length > 0 ? (
+                  <div className="space-y-2 rounded-md border border-border/60 p-2">
+                    <p className="text-xs font-semibold text-foreground">
+                      {language === "ar" ? "المحطات المختارة" : "Selected stations"}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {selectedCrossStationUnits.map((unit) => (
+                        <span
+                          key={unit.id}
+                          className="rounded-md bg-secondary/60 px-2 py-1 text-xs text-foreground"
+                        >
+                          {language === "ar" ? unit.name_ar : unit.name_en}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
                 {preview.breakdowns.length > 0 ? (
                   <div className="space-y-2 rounded-md border border-border/60 p-2">
                     <p className="text-xs font-semibold text-foreground">
-                      {language === "ar" ? "تفصيل المعاينة حسب الوحدة / المدير" : "Preview breakdown by unit / manager"}
+                      {language === "ar"
+                        ? campaignType === "cross_station"
+                          ? "أزواج المحطات"
+                          : "تفصيل المعاينة حسب الوحدة / المدير"
+                        : campaignType === "cross_station"
+                          ? "Station pairings"
+                          : "Preview breakdown by unit / manager"}
                     </p>
                     <div className="max-h-48 space-y-2 overflow-auto pr-1">
                       {preview.breakdowns.map((item) => (
@@ -1583,7 +1933,7 @@ const InitiateEvaluationDialog: React.FC<InitiateEvaluationDialogProps> = ({
               !!preview.blockReason ||
               (preview.requiresTypedConfirmation && highVolumeConfirmText.trim().toUpperCase() !== HIGH_VOLUME_CONFIRM_PHRASE) ||
               (campaignType === "cross_station" &&
-                (!selectedSourceUnit || !selectedTargetUnit)) ||
+                (!selectedTargetUnit || selectedCrossStationIds.length === 0)) ||
               (campaignType === "self_station" && selfStationMode === "specific" && !selectedSourceUnit)
             }
           >

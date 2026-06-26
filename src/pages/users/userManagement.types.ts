@@ -1,5 +1,9 @@
 export type AppRole = string; // role key (supports custom roles)
 
+// Evaluation hierarchy — classification only, INDEPENDENT of system access role.
+// Does NOT grant permissions and does NOT affect RLS.
+export type EvaluationLevel = 'employee' | 'supervisor' | 'manager';
+
 export interface Department {
   id: string;
   name_en: string;
@@ -17,6 +21,7 @@ export interface UserProfile {
   staff_id: string | null;
   is_active: boolean;
   position: string | null;
+  evaluation_level?: EvaluationLevel | null;
   deleted_at?: string | null;
   department?: Department;
   role?: AppRole;

@@ -210,6 +210,9 @@ serve(async (req) => {
     const phone = (body.phone ?? body.phone_number) ? String(body.phone ?? body.phone_number).trim() : null
     const isActive = body.is_active !== undefined ? Boolean(body.is_active) : undefined
     const position = body.position !== undefined && body.position !== null ? String(body.position).trim() : undefined
+    const rawEvalLevel = (body.evaluationLevel ?? body.evaluation_level) != null ? String(body.evaluationLevel ?? body.evaluation_level).trim() : undefined
+    const VALID_EVAL_LEVELS = new Set(['employee', 'supervisor', 'manager'])
+    const evaluationLevel = rawEvalLevel && VALID_EVAL_LEVELS.has(rawEvalLevel) ? rawEvalLevel : undefined
 
     if (!nameEn) {
       return jsonErr(headers, requestId, 'Missing required field: name_en', 400)
@@ -377,6 +380,7 @@ serve(async (req) => {
     }
     if (isActive !== undefined) profilePayload.is_active = isActive
     if (position !== undefined) profilePayload.position = position
+    if (evaluationLevel !== undefined) profilePayload.evaluation_level = evaluationLevel
 
     const { error: profileErr } = await adminClient.from('profiles').upsert(profilePayload, { onConflict: 'id' })
     if (profileErr) {

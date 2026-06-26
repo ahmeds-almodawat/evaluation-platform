@@ -9,6 +9,7 @@ import { z } from 'zod';
 import * as XLSX from 'xlsx';
 import { Loader2 } from 'lucide-react';
 import { logAudit } from '@/lib/audit';
+import type { EvaluationLevel } from './userManagement.types';
 
 // In the UI we use the custom RBAC role key (custom_roles.role_key) as the "role".
 // Legacy roles (user_roles.role) are still maintained server-side for backward compatibility.
@@ -66,6 +67,7 @@ interface UserProfile {
   staff_id: string | null;
   is_active: boolean;
   position: string | null;
+  evaluation_level?: EvaluationLevel | null;
   department?: Department;
   role?: AppRole;
 }
@@ -80,6 +82,7 @@ const userSchema = z.object({
   role: z.string().min(1, 'Role is required'),
   phone: z.string().optional(),
   position: z.enum(['Manager', 'Employee']).optional(),
+  evaluationLevel: z.enum(['employee', 'supervisor', 'manager']).optional(),
 });
 
 const UserManagementPage: React.FC = () => {
@@ -126,6 +129,7 @@ const UserManagementPage: React.FC = () => {
   const [staffId, setStaffId] = useState('');
   const [isActive, setIsActive] = useState(true);
   const [position, setPosition] = useState<Position | ''>('');
+  const [evaluationLevel, setEvaluationLevel] = useState<EvaluationLevel | ''>('');
 
   // Helper: always fetch a fresh access token (prevents "token is not defined" / stale session issues)
   const getAccessToken = async (): Promise<string> => {
@@ -414,6 +418,7 @@ const UserManagementPage: React.FC = () => {
     setStaffId('');
     setIsActive(true);
     setPosition('');
+    setEvaluationLevel('');
     setEditingUser(null);
   };
 
@@ -438,6 +443,7 @@ const UserManagementPage: React.FC = () => {
     setStaffId(user.staff_id || '');
     setIsActive(user.is_active !== false);
     setPosition((user.position as Position) || '');
+    setEvaluationLevel((user.evaluation_level as EvaluationLevel) || '');
     setPassword('');
     setDialogOpen(true);
   };
@@ -578,8 +584,8 @@ const UserManagementPage: React.FC = () => {
     }
 
     const validation = editingUser
-      ? userSchema.partial({ password: true, email: true }).safeParse({ nameEn, nameAr, departmentId, role, phone, position: position || undefined, ...(password ? { password } : {}) })
-      : userSchema.safeParse({ email, password, nameEn, nameAr, departmentId, role, phone, position: position || undefined });
+      ? userSchema.partial({ password: true, email: true }).safeParse({ nameEn, nameAr, departmentId, role, phone, position: position || undefined, evaluationLevel: evaluationLevel || undefined, ...(password ? { password } : {}) })
+      : userSchema.safeParse({ email, password, nameEn, nameAr, departmentId, role, phone, position: position || undefined, evaluationLevel: evaluationLevel || undefined });
 
     if (!validation.success) {
       toast({
@@ -660,6 +666,7 @@ const UserManagementPage: React.FC = () => {
             staff_id: staffId || undefined,
             is_active: isActive,
             position: position || undefined,
+            evaluation_level: evaluationLevel || undefined,
             update_existing: true,
           },
         });
@@ -692,6 +699,7 @@ const UserManagementPage: React.FC = () => {
             staff_id: staffId || undefined,
             is_active: isActive,
             position: position || undefined,
+            evaluation_level: evaluationLevel || undefined,
           },
         });
 
@@ -754,6 +762,7 @@ const UserManagementPage: React.FC = () => {
           staff_id,
           is_active,
           position,
+          evaluation_level,
           department_id,
           department:departments(name_en,name_ar)
         `)
@@ -778,6 +787,7 @@ const UserManagementPage: React.FC = () => {
           staff_id: p.staff_id || '',
           is_active: p.is_active !== false,
           position: p.position || '',
+          evaluation_level: (p.evaluation_level as string) || '',
           department_en: p.department?.name_en || '',
           department_ar: p.department?.name_ar || '',
           role: customMap.get(p.id) || rolesMap.get(p.id) || 'user',
@@ -1237,7 +1247,15 @@ const email = normalizedRow['email'];
             else userPosition = '';
           }
 
-          console.log('Processing user:', { email, nameEn, nameAr, deptId, legacyTier, customRoleKeyForEdge, userPosition, updateExisting: updateExistingOnUpload });
+          let userEvalLevel = normalizedRow['evaluation_level'] || '';
+          if (userEvalLevel && !['employee', 'supervisor', 'manager'].includes(userEvalLevel)) {
+            if (['Employee', 'EMPLOYEE'].includes(userEvalLevel)) userEvalLevel = 'employee';
+            else if (['Supervisor', 'SUPERVISOR'].includes(userEvalLevel)) userEvalLevel = 'supervisor';
+            else if (['Manager', 'MANAGER'].includes(userEvalLevel)) userEvalLevel = 'manager';
+            else userEvalLevel = '';
+          }
+
+          console.log('Processing user:', { email, nameEn, nameAr, deptId, legacyTier, customRoleKeyForEdge, userPosition, userEvalLevel, updateExisting: updateExistingOnUpload });
 
           const response = await supabase.functions.invoke('create-user', {
             headers: {
@@ -1258,6 +1276,7 @@ const email = normalizedRow['email'];
                   ? true
                   : ['true', '1', 'yes', 'y', 'active'].includes(normalizedRow['is_active'].toLowerCase()),
               position: userPosition || undefined,
+              evaluation_level: userEvalLevel || undefined,
               update_existing: updateExistingOnUpload, // Pass the toggle value
             },
           });
@@ -1417,6 +1436,8 @@ const email = normalizedRow['email'];
       setRole={setRole}
       position={position}
       setPosition={setPosition}
+      evaluationLevel={evaluationLevel}
+      setEvaluationLevel={setEvaluationLevel}
       canAssignAdminRole={canAssignAdminRole}
       canResetPassword={canResetPassword}
       getRoleBadgeVariant={getRoleBadgeVariant}

@@ -88,6 +88,7 @@ const EvaluationsPage: React.FC = () => {
   const [showCrossDepartmentDialog, setShowCrossDepartmentDialog] = useState(false);
   const [showManagerToTeamDialog, setShowManagerToTeamDialog] = useState(false);
   const [showTeamToManagerDialog, setShowTeamToManagerDialog] = useState(false);
+  const [showManagerToSupervisorsDialog, setShowManagerToSupervisorsDialog] = useState(false);
   const [stats, setStats] = useState({
     total: 0,
     average: 0,
@@ -156,8 +157,9 @@ const EvaluationsPage: React.FC = () => {
         const getTypeLabel = () => {
           if (evalType === 'self_station' || evalScope === 'unit_peer') return { en: 'Self Station / Unit', ar: 'تقييم داخلي للوحدة / المحطة' };
           if (evalType === 'cross_station' || evalScope === 'cross_unit') return { en: 'Cross Station', ar: 'تقييم بين الوحدات / المحطات' };
-          if (evalType === 'manager_to_team') return { en: 'Manager → Team', ar: 'تقييم المدير للفريق' };
-          if (evalType === 'team_to_manager') return { en: 'Team → Manager', ar: 'تقييم الفريق للمدير' };
+          if (evalType === 'manager_to_team') return { en: 'Supervisor/Manager → Team', ar: 'المشرف/المدير → الفريق' };
+          if (evalType === 'team_to_manager') return { en: 'Team → Supervisor/Manager', ar: 'الفريق → المشرف/المدير' };
+          if (evalType === 'manager_to_supervisors') return { en: 'Manager → Supervisors', ar: 'المدير → المشرفين' };
           if (evalType === 'cross_department' || evalType === 'cross_individuals' || evalType === 'cross_managers' || evalType === 'cross' || evalScope === 'cross_department') return { en: 'Cross Department', ar: 'تقييم بين الأقسام' };
           if (isLegacySame) return { en: 'Legacy Self Dept', ar: 'تقييم داخلي قديم' };
           return { en: 'Evaluation', ar: 'تقييم' };
@@ -306,7 +308,7 @@ const EvaluationsPage: React.FC = () => {
                 onClick={() => setShowManagerToTeamDialog(true)}
               >
                 <User className="w-4 h-4" />
-                {language === 'ar' ? 'تقييم المدير للفريق' : 'Manager → Team'}
+                {language === 'ar' ? 'المشرف/المدير → الفريق' : 'Supervisor/Manager → Team'}
               </Button>
               <Button
                 variant="outline"
@@ -314,7 +316,15 @@ const EvaluationsPage: React.FC = () => {
                 onClick={() => setShowTeamToManagerDialog(true)}
               >
                 <ShieldCheck className="w-4 h-4" />
-                {language === 'ar' ? 'تقييم الفريق للمدير' : 'Team → Manager'}
+                {language === 'ar' ? 'الفريق → المشرف/المدير' : 'Team → Supervisor/Manager'}
+              </Button>
+              <Button
+                variant="outline"
+                className="gap-2"
+                onClick={() => setShowManagerToSupervisorsDialog(true)}
+              >
+                <Briefcase className="w-4 h-4" />
+                {language === 'ar' ? 'المدير → المشرفين' : 'Manager → Supervisors'}
               </Button>
               {canManageAnonymous ? (
                 <Button
@@ -529,6 +539,11 @@ const EvaluationsPage: React.FC = () => {
             open={showTeamToManagerDialog}
             onOpenChange={setShowTeamToManagerDialog}
             type="team_to_manager"
+          />
+          <InitiateEvaluationDialog
+            open={showManagerToSupervisorsDialog}
+            onOpenChange={setShowManagerToSupervisorsDialog}
+            type="manager_to_supervisors"
           />
         </>
       )}
