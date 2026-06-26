@@ -316,11 +316,11 @@ const InitiateEvaluationDialog: React.FC<InitiateEvaluationDialogProps> = ({
       },
       cross_station: {
         titleEn: "Multi-Station Cross Evaluation",
-        titleAr: "تقييم بين الوحدات / المحطات",
+        titleAr: "تقييم متعدد بين المحطات / الوحدات",
         descriptionEn:
-          "Create Cross Station Batch pairings between one main station and multiple selected stations inside the same department.",
+          "Choose one main station, select the stations that should evaluate it, then choose the evaluation direction before previewing pairings.",
         descriptionAr:
-          "تقوم وحدة / محطة مختارة بتقييم وحدة / محطة أخرى داخل نفس القسم.",
+          "اختر محطة رئيسية، ثم اختر المحطات التي ستشارك في التقييم، ثم حدد اتجاه التقييم قبل معاينة الأزواج.",
         icon: <ArrowLeftRight className="w-5 h-5 text-primary" />,
       },
       cross_department: {
@@ -1557,7 +1557,7 @@ const InitiateEvaluationDialog: React.FC<InitiateEvaluationDialogProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 rounded-lg border border-border/60 bg-secondary/20 p-3">
               <div className="space-y-2">
                 <Label>
-                  {language === "ar" ? "الوحدة المستهدفة" : "Main / Target Station"}
+                  {language === "ar" ? "المحطة الرئيسية" : "Main station"}
                 </Label>
                 <Select
                   value={selectedTargetUnit}
@@ -1569,7 +1569,7 @@ const InitiateEvaluationDialog: React.FC<InitiateEvaluationDialogProps> = ({
                   <SelectTrigger>
                     <SelectValue
                       placeholder={
-                        language === "ar" ? "اختر الوحدة" : "Choose unit"
+                        language === "ar" ? "اختر المحطة الرئيسية" : "Choose main station"
                       }
                     />
                   </SelectTrigger>
@@ -1598,7 +1598,7 @@ const InitiateEvaluationDialog: React.FC<InitiateEvaluationDialogProps> = ({
                   <SelectTrigger>
                     <SelectValue
                       placeholder={
-                        language === "ar" ? "اختر الوحدة" : "Choose unit"
+                        language === "ar" ? "اختر الاتجاه" : "Choose direction"
                       }
                     />
                   </SelectTrigger>
@@ -1606,12 +1606,12 @@ const InitiateEvaluationDialog: React.FC<InitiateEvaluationDialogProps> = ({
                     <SelectItem value="selected_to_main">
                       {language === "ar"
                         ? "المحطات المختارة ← المحطة الرئيسية"
-                        : "Selected stations -> Main station"}
+                        : "Selected stations → Main station"}
                     </SelectItem>
                     <SelectItem value="main_to_selected">
                       {language === "ar"
                         ? "المحطة الرئيسية ← المحطات المختارة"
-                        : "Main station -> Selected stations"}
+                        : "Main station → Selected stations"}
                     </SelectItem>
                     <SelectItem value="bidirectional">
                       {language === "ar" ? "اتجاهان" : "Bidirectional"}
@@ -1624,7 +1624,7 @@ const InitiateEvaluationDialog: React.FC<InitiateEvaluationDialogProps> = ({
                   <Label>
                     {language === "ar"
                       ? "المحطات المقيِّمة"
-                      : "Evaluating stations"}
+                      : "Selected evaluating stations"}
                   </Label>
                   <div className="flex items-center gap-2">
                     <Button
@@ -1692,13 +1692,13 @@ const InitiateEvaluationDialog: React.FC<InitiateEvaluationDialogProps> = ({
                 <p className="text-xs text-muted-foreground">
                   {language === "ar"
                     ? "يتم استبعاد المحطة الرئيسية تلقائياً من قائمة المحطات المختارة."
-                    : `${selectedCrossStationIds.length} station(s) selected. The main station is excluded automatically.`}
+                    : `${selectedCrossStationIds.length} evaluating station(s) selected. Select All excludes the main station automatically.`}
                 </p>
               </div>
               <div className="md:col-span-2 text-xs text-muted-foreground">
                 {language === "ar"
                   ? "يتطلب هذا النوع وجود وحدتين نشطتين على الأقل داخل نفس القسم."
-                  : "Select one main station, choose evaluating stations, then preview the station pairings before creating evaluations."}
+                  : "Select one main station, choose the evaluating stations, then preview the station pairings before creating evaluations."}
               </div>
             </div>
           ) : null}

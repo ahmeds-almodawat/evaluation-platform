@@ -63,6 +63,9 @@ interface DisplayEvaluation {
   id: string;
   type: string;
   typeAr: string;
+  rawType: string;
+  rawScope: string;
+  normalizedType: Exclude<EvaluationFilterType, 'all'> | 'other';
   date: string;
   score: number;
   performance: number;
@@ -73,12 +76,62 @@ interface DisplayEvaluation {
   evaluateeNameAr: string;
 }
 
+type EvaluationFilterType =
+  | 'all'
+  | 'self_station'
+  | 'cross_station'
+  | 'cross_department'
+  | 'manager_to_team'
+  | 'team_to_manager'
+  | 'manager_to_supervisors'
+  | 'legacy';
+
+const matchesEvaluationTypeFilter = (
+  evaluation: DisplayEvaluation,
+  selectedFilter: EvaluationFilterType,
+) => {
+  if (selectedFilter === 'all') return true;
+
+  const rawType = evaluation.rawType;
+  const rawScope = evaluation.rawScope;
+
+  if (selectedFilter === 'self_station') {
+    return rawType === 'self_station' || rawScope === 'unit_peer';
+  }
+  if (selectedFilter === 'cross_station') {
+    return rawType === 'cross_station' || rawScope === 'cross_unit';
+  }
+  if (selectedFilter === 'cross_department') {
+    return (
+      rawType === 'cross_department' ||
+      rawType === 'cross_individuals' ||
+      rawType === 'cross_managers' ||
+      rawType === 'cross' ||
+      rawScope === 'cross_department'
+    );
+  }
+  if (selectedFilter === 'manager_to_team') {
+    return rawType === 'manager_to_team';
+  }
+  if (selectedFilter === 'team_to_manager') {
+    return rawType === 'team_to_manager';
+  }
+  if (selectedFilter === 'manager_to_supervisors') {
+    return rawType === 'manager_to_supervisors';
+  }
+  if (selectedFilter === 'legacy') {
+    return evaluation.normalizedType === 'legacy';
+  }
+
+  return false;
+};
+
 const EvaluationsPage: React.FC = () => {
   const navigate = useNavigate();
   const { t, language } = useLanguage();
   const { role, user, profile, hasPermission } = useSupabaseAuth();
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterType, setFilterType] = useState('all');
+  const [filterType, setFilterType] = useState<EvaluationFilterType>('all');
   const [selectedEvaluation, setSelectedEvaluation] = useState<DisplayEvaluation | null>(null);
   const [evaluations, setEvaluations] = useState<DisplayEvaluation[]>([]);
   const [departmentLinks, setDepartmentLinks] = useState<string[]>([]);
@@ -154,14 +207,25 @@ const EvaluationsPage: React.FC = () => {
         const avgScore = (e.performance_score + e.teamwork_score + (e.workload_score || 0)) / 
           (e.workload_score ? 3 : 2);
 
+        const normalizedType: DisplayEvaluation['normalizedType'] = (() => {
+          if (evalType === 'self_station' || evalScope === 'unit_peer') return 'self_station';
+          if (evalType === 'cross_station' || evalScope === 'cross_unit') return 'cross_station';
+          if (evalType === 'manager_to_team') return 'manager_to_team';
+          if (evalType === 'team_to_manager') return 'team_to_manager';
+          if (evalType === 'manager_to_supervisors') return 'manager_to_supervisors';
+          if (evalType === 'cross_department' || evalType === 'cross_individuals' || evalType === 'cross_managers' || evalType === 'cross' || evalScope === 'cross_department') return 'cross_department';
+          if (isLegacySame) return 'legacy';
+          return 'other';
+        })();
+
         const getTypeLabel = () => {
-          if (evalType === 'self_station' || evalScope === 'unit_peer') return { en: 'Self Station / Unit', ar: 'تقييم داخلي للوحدة / المحطة' };
-          if (evalType === 'cross_station' || evalScope === 'cross_unit') return { en: 'Cross Station', ar: 'تقييم بين الوحدات / المحطات' };
-          if (evalType === 'manager_to_team') return { en: 'Supervisor/Manager → Team', ar: 'المشرف/المدير → الفريق' };
-          if (evalType === 'team_to_manager') return { en: 'Team → Supervisor/Manager', ar: 'الفريق → المشرف/المدير' };
-          if (evalType === 'manager_to_supervisors') return { en: 'Manager → Supervisors', ar: 'المدير → المشرفين' };
-          if (evalType === 'cross_department' || evalType === 'cross_individuals' || evalType === 'cross_managers' || evalType === 'cross' || evalScope === 'cross_department') return { en: 'Cross Department', ar: 'تقييم بين الأقسام' };
-          if (isLegacySame) return { en: 'Legacy Self Dept', ar: 'تقييم داخلي قديم' };
+          if (normalizedType === 'self_station') return { en: 'Self Station / Unit', ar: 'تقييم داخلي للوحدة / المحطة' };
+          if (normalizedType === 'cross_station') return { en: 'Multi-Station Cross Evaluation', ar: 'تقييم متعدد بين المحطات / الوحدات' };
+          if (normalizedType === 'manager_to_team') return { en: 'Supervisor/Manager → Team', ar: 'المشرف/المدير → الفريق' };
+          if (normalizedType === 'team_to_manager') return { en: 'Team → Supervisor/Manager', ar: 'الفريق → المشرف/المدير' };
+          if (normalizedType === 'manager_to_supervisors') return { en: 'Manager → Supervisors', ar: 'المدير → المشرفين' };
+          if (normalizedType === 'cross_department') return { en: 'Cross Department', ar: 'تقييم بين الأقسام' };
+          if (normalizedType === 'legacy') return { en: 'Legacy Self Dept', ar: 'تقييم داخلي قديم' };
           return { en: 'Evaluation', ar: 'تقييم' };
         };
 
@@ -171,6 +235,9 @@ const EvaluationsPage: React.FC = () => {
           id: e.id,
           type: label.en,
           typeAr: label.ar,
+          rawType: evalType,
+          rawScope: evalScope,
+          normalizedType,
           date: new Date(e.created_at).toLocaleDateString(),
           score: avgScore,
           performance: e.performance_score,
@@ -226,12 +293,7 @@ const EvaluationsPage: React.FC = () => {
 
     return evaluations.filter((evaluation) => {
       // Filter by type
-      if (filterType === 'self_station' && !evaluation.type.includes('Self Station')) return false;
-      if (filterType === 'cross_station' && evaluation.type !== 'Cross Station') return false;
-      if (filterType === 'cross_department' && evaluation.type !== 'Cross Department') return false;
-      if (filterType === 'manager_to_team' && evaluation.type !== 'Manager → Team') return false;
-      if (filterType === 'team_to_manager' && evaluation.type !== 'Team → Manager') return false;
-      if (filterType === 'legacy' && !evaluation.type.includes('Legacy')) return false;
+      if (!matchesEvaluationTypeFilter(evaluation, filterType)) return false;
       
       // Filter by search term
       if (trimmedSearch) {
@@ -379,7 +441,7 @@ const EvaluationsPage: React.FC = () => {
             />
           </div>
           
-          <Select value={filterType} onValueChange={setFilterType}>
+          <Select value={filterType} onValueChange={(value) => setFilterType(value as EvaluationFilterType)}>
             <SelectTrigger className="w-full md:w-48">
               <Filter className="w-4 h-4 mr-2" />
               <SelectValue placeholder={t('action.filter')} />
@@ -392,16 +454,19 @@ const EvaluationsPage: React.FC = () => {
                 {language === 'ar' ? 'تقييم داخلي للوحدة / المحطة' : 'Self Station / Unit'}
               </SelectItem>
               <SelectItem value="cross_station">
-                {language === 'ar' ? 'تقييم بين الوحدات / المحطات' : 'Cross Station'}
+                {language === 'ar' ? 'تقييم متعدد بين المحطات / الوحدات' : 'Multi-Station Cross Evaluation'}
               </SelectItem>
               <SelectItem value="cross_department">
                 {language === 'ar' ? 'تقييم بين الأقسام' : 'Cross Department'}
               </SelectItem>
               <SelectItem value="manager_to_team">
-                {language === 'ar' ? 'تقييم المدير للفريق' : 'Manager → Team'}
+                {language === 'ar' ? 'المشرف/المدير → الفريق' : 'Supervisor/Manager → Team'}
               </SelectItem>
               <SelectItem value="team_to_manager">
-                {language === 'ar' ? 'تقييم الفريق للمدير' : 'Team → Manager'}
+                {language === 'ar' ? 'الفريق → المشرف/المدير' : 'Team → Supervisor/Manager'}
+              </SelectItem>
+              <SelectItem value="manager_to_supervisors">
+                {language === 'ar' ? 'المدير → المشرفين' : 'Manager → Supervisors'}
               </SelectItem>
               <SelectItem value="legacy">
                 {language === 'ar' ? 'تقييمات قديمة' : 'Legacy Evaluations'}
