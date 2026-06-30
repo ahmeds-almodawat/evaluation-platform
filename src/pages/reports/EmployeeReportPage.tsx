@@ -5,12 +5,13 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 import { supabase } from '@/integrations/supabase/client';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useToast } from '@/components/ui/use-toast';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import ExportButtons from '@/components/ui/ExportButtons';
 import EmptyState from '@/components/common/EmptyState';
 import { exportReportServer } from '@/utils/exportServer';
 import { useSupabaseAuth } from '@/hooks/useSupabaseAuth';
 import PeriodScoreDrilldown from '@/components/evaluations/PeriodScoreDrilldown';
+import SearchableEmployeeSelect from '@/components/reports/SearchableEmployeeSelect';
+import FlexibleMonthlyScoreChart from '@/components/reports/FlexibleMonthlyScoreChart';
 
 type EvaluationRow = {
   id: string;
@@ -29,6 +30,9 @@ type ProfileRow = {
   email: string | null;
   position: string | null;
   department_id: string | null;
+  staff_id?: string | null;
+  is_active?: boolean | null;
+  deleted_at?: string | null;
 };
 
 const scoreOf = (e: EvaluationRow) => {
@@ -90,7 +94,9 @@ const EmployeeReportPage: React.FC = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('profiles')
-        .select('id,name_en,name_ar,email,position,department_id')
+        .select('id,name_en,name_ar,email,position,department_id,staff_id,is_active,deleted_at')
+        .eq('is_active', true)
+        .is('deleted_at', null)
         .order('name_en', { ascending: true });
       if (error) throw error;
       return (data as any as ProfileRow[]) ?? [];
@@ -104,7 +110,7 @@ const EmployeeReportPage: React.FC = () => {
       const uid = selectedUserId as string;
 
       const [{ data: profile, error: pErr }, { data: evaluations, error: eErr }] = await Promise.all([
-        supabase.from('profiles').select('id,name_en,name_ar,email,position,department_id').eq('id', uid).single(),
+        supabase.from('profiles').select('id,name_en,name_ar,email,position,department_id,staff_id,is_active,deleted_at').eq('id', uid).single(),
         supabase
           .from('evaluations')
           .select('id,created_at,period,status,performance_score,teamwork_score,workload_score')
@@ -160,7 +166,7 @@ const EmployeeReportPage: React.FC = () => {
 
   const employeeLabel = (p: ProfileRow) => {
     const name = language === 'ar' ? p.name_ar : p.name_en;
-    return name || p.email || p.id;
+    return name || p.email || p.staff_id || p.id;
   };
 
   const onPickEmployee = (id: string) => {
@@ -205,21 +211,16 @@ const EmployeeReportPage: React.FC = () => {
       </div>
 
       <div className="bg-card border rounded-xl p-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 items-center">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 items-start">
           <div>
             <div className="text-sm text-muted-foreground">{language === 'ar' ? 'اختر موظفًا' : 'Select employee'}</div>
-            <Select value={selectedUserId ?? ''} onValueChange={onPickEmployee}>
-              <SelectTrigger className="mt-1">
-                <SelectValue placeholder={language === 'ar' ? 'اختر...' : 'Choose...'} />
-              </SelectTrigger>
-              <SelectContent>
-                {employeesQuery.data?.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>
-                    {employeeLabel(p)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SearchableEmployeeSelect
+              employees={employeesQuery.data ?? []}
+              selectedUserId={selectedUserId}
+              language={language}
+              loading={employeesQuery.isLoading}
+              onSelect={onPickEmployee}
+            />
           </div>
 
           {computed.profile ? (
@@ -315,8 +316,9 @@ const EmployeeReportPage: React.FC = () => {
             </div>
           </div>
 
+          <FlexibleMonthlyScoreChart evaluations={computed.evaluations} language={language} />
+
           <div className="bg-card border rounded-xl p-5">
-            <div className="bg-card border rounded-xl p-5">
             <div className="font-semibold mb-4">{language === 'ar' ? 'تفصيل الدرجة حسب الفترة' : 'Score breakdown by period'}</div>
             {selectedUserId && computed.profile ? (
               <PeriodScoreDrilldown
@@ -331,7 +333,8 @@ const EmployeeReportPage: React.FC = () => {
             )}
           </div>
 
-          <div className="font-semibold mb-4">{language === 'ar' ? 'آخر التقييمات' : 'Recent evaluations'}</div>
+          <div className="bg-card border rounded-xl p-5">
+            <div className="font-semibold mb-4">{language === 'ar' ? 'آخر التقييمات' : 'Recent evaluations'}</div>
             <div className="w-full overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
