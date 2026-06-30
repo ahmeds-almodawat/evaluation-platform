@@ -37,6 +37,8 @@ const scoreOf = (e: EvaluationRow) => {
   return vals.reduce((a, b) => a + b, 0) / vals.length;
 };
 
+const isCompletedEvaluation = (e: EvaluationRow) => e.status === 'completed';
+
 const avg = (nums: number[]) => (nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : null);
 
 const monthKey = (iso: string) => iso.slice(0, 7);
@@ -122,15 +124,16 @@ const EmployeeReportPage: React.FC = () => {
     const evaluations = reportQuery.data?.evaluations ?? [];
 
     const total = evaluations.length;
-    const completed = evaluations.filter((e) => e.status === 'completed').length;
+    const completedEvaluations = evaluations.filter(isCompletedEvaluation);
+    const completed = completedEvaluations.length;
     const completionRate = total ? Math.round((completed / total) * 100) : 0;
 
-    const scores = evaluations.map(scoreOf);
+    const scores = completedEvaluations.map(scoreOf);
     const avgScore = avg(scores);
 
     const months = lastNMonths(6);
     const trend = months.map((m) => {
-      const bucket = evaluations.filter((e) => monthKey(e.created_at) === m);
+      const bucket = completedEvaluations.filter((e) => (e.period || monthKey(e.created_at)) === m);
       const bucketScores = bucket.map(scoreOf);
       return {
         month: monthLabel(m, language === 'ar' ? 'ar' : 'en'),
@@ -143,10 +146,10 @@ const EmployeeReportPage: React.FC = () => {
       completed,
       completionRate,
       avgScore: avgScore === null ? null : Number((avgScore as number).toFixed(2)),
-      avgPerformance: avg(evaluations.map((e) => e.performance_score)) === null ? null : Number((avg(evaluations.map((e) => e.performance_score)) as number).toFixed(2)),
-      avgTeamwork: avg(evaluations.map((e) => e.teamwork_score)) === null ? null : Number((avg(evaluations.map((e) => e.teamwork_score)) as number).toFixed(2)),
+      avgPerformance: avg(completedEvaluations.map((e) => e.performance_score)) === null ? null : Number((avg(completedEvaluations.map((e) => e.performance_score)) as number).toFixed(2)),
+      avgTeamwork: avg(completedEvaluations.map((e) => e.teamwork_score)) === null ? null : Number((avg(completedEvaluations.map((e) => e.teamwork_score)) as number).toFixed(2)),
       avgWorkload: (() => {
-        const wl = evaluations.map((e) => (typeof e.workload_score === 'number' ? e.workload_score : null)).filter((x): x is number => typeof x === 'number');
+        const wl = completedEvaluations.map((e) => (typeof e.workload_score === 'number' ? e.workload_score : null)).filter((x): x is number => typeof x === 'number');
         const a = avg(wl);
         return a === null ? null : Number(a.toFixed(2));
       })(),
